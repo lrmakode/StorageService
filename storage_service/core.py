@@ -72,7 +72,7 @@ class StorageService:
 
         return target_path
 
-    def backup_file(self, filepath: str, skip_duplicates: bool = True) -> bool:
+    def backup_file(self, filepath: str, skip_duplicates: bool = True) -> str:
         """
         Backup a single file
 
@@ -81,31 +81,31 @@ class StorageService:
             skip_duplicates: Skip if file already backed up
 
         Returns:
-            True if backed up successfully, False otherwise
+            Status: "success", "skipped_duplicate", or "failed"
         """
         if not os.path.exists(filepath):
-            return False
+            return "failed"
 
         target_path = self._get_target_path(filepath)
         if not target_path:
-            return False
+            return "failed"
 
         # Check for duplicates
         if skip_duplicates and self.deduplicator.is_duplicate(filepath):
             # File already exists, just register it
             self.deduplicator.register_file(filepath)
             self._register_backup(filepath, str(target_path), "skipped_duplicate")
-            return True
+            return "skipped_duplicate"
 
         # Copy file
         try:
             shutil.copy2(filepath, target_path)
             self.deduplicator.register_file(filepath)
             self._register_backup(filepath, str(target_path), "success")
-            return True
+            return "success"
         except Exception as e:
             self._register_backup(filepath, str(target_path), f"error: {str(e)}")
-            return False
+            return "failed"
 
     def backup_directory(
         self, source_dir: str, skip_duplicates: bool = True, show_progress: bool = True
@@ -136,10 +136,12 @@ class StorageService:
 
         iterator = tqdm(files, disable=not show_progress) if show_progress else files
         for file_path in iterator:
-            result = self.backup_file(str(file_path), skip_duplicates)
-            if result:
+            status = self.backup_file(str(file_path), skip_duplicates)
+            if status == "success":
                 stats["successful"] += 1
-            else:
+            elif status == "skipped_duplicate":
+                stats["skipped"] += 1
+            else:  # "failed"
                 stats["failed"] += 1
 
         return stats
