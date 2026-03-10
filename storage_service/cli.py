@@ -215,18 +215,25 @@ def find_duplicates(backup_root: str):
         click.echo(f"\n🔗 Duplicate Files (Total Groups: {len(duplicates)}):\n")
         for i, (file_hash, file_paths) in enumerate(duplicates.items(), 1):
             click.echo(f"{i}. Hash: {file_hash}")
-            for j, path in enumerate(file_paths, 1):
-                click.echo(f"   [{j}] Source: {path}")
-                
-                # Find backup path(s) for this source file
+            
+            # Find the FIRST backup path for this hash (since all duplicates map to same content)
+            first_backup_path = None
+            for path in file_paths:
                 backup_entries = db.search_backups(source_path=path)
                 if backup_entries:
-                    # Get unique backup paths to avoid duplicates
-                    backup_paths = list(set(entry.get('target_path', 'N/A') for entry in backup_entries))
-                    for backup_path in backup_paths:
-                        click.echo(f"       └─ Backup: {backup_path}")
-                else:
-                    click.echo(f"       └─ Backup: Not found in registry")
+                    first_backup_path = backup_entries[0].get('target_path', 'N/A')
+                    break
+            
+            # Show all source files and indicate they're duplicates
+            for j, path in enumerate(file_paths, 1):
+                click.echo(f"   [{j}] Source: {path}")
+            
+            # Show backup path only once
+            if first_backup_path:
+                click.echo(f"   └─ Backup (Single Copy): {first_backup_path}")
+                click.echo(f"      ⚠️  {len(file_paths)} source files → 1 backup file (duplicates)")
+            else:
+                click.echo(f"   └─ Backup: Not found in registry")
             click.echo()
 
     except Exception as e:

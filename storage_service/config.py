@@ -131,9 +131,10 @@ BackupRoot/
 │   │   └── ...
 │   └── ...
 └── .storage_service/
-    ├── backup_registry.json    # Tracks all backed up files
-    ├── hash_index.json         # Deduplication hash index
-    └── backup_metadata.json    # Metadata about backups
+    └── storage.db             # SQLite database containing:
+                               #   - Backup registry (all backed up files)
+                               #   - Hash index (deduplication tracking)
+                               #   - File metadata
 
 KEY FEATURES:
 =============

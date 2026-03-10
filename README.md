@@ -165,9 +165,10 @@ backup_root/
 │   │   └── ...
 │   └── ...
 └── .storage_service/
-    ├── backup_registry.json    # Tracks all backed up files
-    ├── hash_index.json         # Deduplication index
-    └── backup_metadata.json    # Metadata about backups
+    └── storage.db              # SQLite database:
+                                # - Backup registry (all backed up files)
+                                # - Hash index (deduplication tracking)
+                                # - File metadata
 ```
 
 ## Supported Media Types
@@ -192,18 +193,13 @@ The service uses SHA256 hashing to identify duplicate files. When a duplicate is
 - The original location is recorded in the backup registry
 - Deduplication metrics are tracked
 
-### Backup Registry
-A JSON file (`backup_registry.json`) that tracks:
-- Source file paths
-- Target backup locations
-- Backup timestamps
-- Backup status (success, skipped, error)
+### Backup Registry & Deduplication Database
+The service uses a SQLite database (`storage.db`) to track:
+- **Backup Registry**: Source file paths, target backup locations, backup timestamps, and status
+- **Hash Index**: SHA256 hashes of all backed-up files and duplicate file relationships
+- **File Metadata**: Media type detection, file sizes, and backup history
 
-### Integrity Index
-A JSON file (`hash_index.json`) that maintains:
-- SHA256 hashes of all backed-up files
-- List of files with identical content
-- Helps identify duplicates on future backups
+This replaces the previous JSON file approach with a more efficient relational database.
 
 ## Examples
 

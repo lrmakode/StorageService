@@ -53,6 +53,3 @@ htmlcov/
 # Project specific
 .storage_service/
 *.log
-backup_registry.json
-hash_index.json
-backup_metadata.json
