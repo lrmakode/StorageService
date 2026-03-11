@@ -2,9 +2,17 @@
 
 import json
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Dict, Any, Optional
-import yaml
+
+
+class MediaType(Enum):
+    """Enumeration for media types"""
+    PHOTOS = "photos"
+    VIDEOS = "videos"
+    AUDIO = "audio"
+    DOCUMENTS = "documents"
 
 
 class Config:

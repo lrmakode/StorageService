@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from .src.MediaCreationDateExtractor import MediaCreationDateExtractor
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -35,6 +37,7 @@ class StorageService:
 
         self.config = config or Config()
         self.detector = MediaDetector(self.config)
+        self.date_extractor = MediaCreationDateExtractor(self.detector)
         
         # Initialize SQLite database
         self.db_path = str(self.backup_root / ".storage_service" / "storage.db")
@@ -43,75 +46,28 @@ class StorageService:
 
     def _extract_file_datetime(self, filepath: str) -> Optional[datetime]:
         """
-        Extract datetime from file metadata (EXIF, video metadata, etc.)
-        Falls back to filesystem modification time if metadata unavailable
-
+        Extract datetime from file metadata with fallback to filesystem modification time.
+        
         Args:
             filepath: Path to the file
-
+            
         Returns:
-            datetime object from file metadata or filesystem, or None if fail
+            datetime object or None if file doesn't exist
         """
-        media_type = self.detector.detect_media_type(filepath)
+        if not os.path.exists(filepath):
+            return None
         
-        # Try to extract from EXIF for photos
-        if media_type == "photos":
-            try:
-                from PIL import Image
-                
-                img = Image.open(filepath)
-                exif_data = img._getexif() if hasattr(img, '_getexif') else None
-                
-                if exif_data:
-                    # Tag 36867 is DateTimeOriginal, tag 306 is DateTime
-                    date_value = exif_data.get(36867) or exif_data.get(306)
-                    if date_value:
-                        try:
-                            return datetime.strptime(str(date_value), "%Y:%m:%d %H:%M:%S")
-                        except ValueError:
-                            pass
-            except Exception:
-                pass  # Fall through to filesystem time
+        # Try to extract from metadata
+        file_datetime = self.date_extractor.extract_creation_date(filepath)
         
-        # Try to extract from video metadata
-        elif media_type == "videos":
-            try:
-                import subprocess
-                import json
-                
-                result = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", 
-                     "format=tags", "-of", "json", filepath],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                
-                if result.returncode == 0:
-                    data = json.loads(result.stdout)
-                    tags = data.get("format", {}).get("tags", {})
-                    
-                    # Try common date tags
-                    for date_tag in ["creation_time", "date", "com.apple.quicktime.creationdate"]:
-                        if date_tag in tags:
-                            date_str = tags[date_tag]
-                            # Handle ISO format with 'T' separator
-                            if 'T' in date_str:
-                                return datetime.fromisoformat(date_str.split('.')[0].replace('Z', '+00:00'))
-                            # Handle space separator
-                            else:
-                                try:
-                                    return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                                except:
-                                    pass
-            except Exception:
-                pass  # Fall through to filesystem time
+        if file_datetime:
+            return file_datetime
         
         # Fallback to filesystem modification time
         try:
-            file_stat = os.stat(filepath)
-            return datetime.fromtimestamp(file_stat.st_mtime)
-        except Exception:
+            mtime = os.path.getmtime(filepath)
+            return datetime.fromtimestamp(mtime)
+        except (OSError, ValueError):
             return None
 
     def _get_target_path(self, filepath: str) -> Optional[Path]:
