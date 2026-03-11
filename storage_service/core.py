@@ -41,6 +41,79 @@ class StorageService:
         self.db = Database(self.db_path)
         self.deduplicator = Deduplicator(self.db_path)
 
+    def _extract_file_datetime(self, filepath: str) -> Optional[datetime]:
+        """
+        Extract datetime from file metadata (EXIF, video metadata, etc.)
+        Falls back to filesystem modification time if metadata unavailable
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            datetime object from file metadata or filesystem, or None if fail
+        """
+        media_type = self.detector.detect_media_type(filepath)
+        
+        # Try to extract from EXIF for photos
+        if media_type == "photos":
+            try:
+                from PIL import Image
+                
+                img = Image.open(filepath)
+                exif_data = img._getexif() if hasattr(img, '_getexif') else None
+                
+                if exif_data:
+                    # Tag 36867 is DateTimeOriginal, tag 306 is DateTime
+                    date_value = exif_data.get(36867) or exif_data.get(306)
+                    if date_value:
+                        try:
+                            return datetime.strptime(str(date_value), "%Y:%m:%d %H:%M:%S")
+                        except ValueError:
+                            pass
+            except Exception:
+                pass  # Fall through to filesystem time
+        
+        # Try to extract from video metadata
+        elif media_type == "videos":
+            try:
+                import subprocess
+                import json
+                
+                result = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", 
+                     "format=tags", "-of", "json", filepath],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    tags = data.get("format", {}).get("tags", {})
+                    
+                    # Try common date tags
+                    for date_tag in ["creation_time", "date", "com.apple.quicktime.creationdate"]:
+                        if date_tag in tags:
+                            date_str = tags[date_tag]
+                            # Handle ISO format with 'T' separator
+                            if 'T' in date_str:
+                                return datetime.fromisoformat(date_str.split('.')[0].replace('Z', '+00:00'))
+                            # Handle space separator
+                            else:
+                                try:
+                                    return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                                except:
+                                    pass
+            except Exception:
+                pass  # Fall through to filesystem time
+        
+        # Fallback to filesystem modification time
+        try:
+            file_stat = os.stat(filepath)
+            return datetime.fromtimestamp(file_stat.st_mtime)
+        except Exception:
+            return None
+
     def _get_target_path(self, filepath: str) -> Optional[Path]:
         """
         Determine target backup path for a file
@@ -55,13 +128,16 @@ class StorageService:
         if not media_type:
             return None
 
-        file_stat = os.stat(filepath)
-        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+        # Extract datetime from file metadata (EXIF, video metadata, etc.)
+        # Falls back to filesystem time if metadata unavailable
+        file_datetime = self._extract_file_datetime(filepath)
+        if not file_datetime:
+            return None
 
         # Get directory names from config
         media_dir = self.detector.get_media_directory_name(media_type)
-        year = file_mtime.strftime("%Y")
-        month = file_mtime.strftime("%m_%B")  # e.g., "01_January"
+        year = file_datetime.strftime("%Y")
+        month = file_datetime.strftime("%m_%B")  # e.g., "01_January"
 
         # Build target path
         target_dir = self.backup_root / media_dir / year / month
@@ -70,7 +146,53 @@ class StorageService:
         filename = Path(filepath).name
         target_path = target_dir / filename
 
+        # Handle collision by appending numeric suffix
+        target_path = self._resolve_collision(target_path)
+
         return target_path
+
+    def _resolve_collision(self, target_path: Path) -> Path:
+        """
+        Resolve filename collisions by appending numeric suffix (_1, _2, etc.)
+
+        Args:
+            target_path: Proposed target path
+
+        Returns:
+            Unique target path with numeric suffix if collision exists
+        """
+        if not target_path.exists():
+            return target_path
+
+        # File exists, append numeric suffix
+        counter = 1
+        file_stem = target_path.stem
+        file_ext = target_path.suffix
+        
+        while True:
+            unique_filename = f"{file_stem}_{counter}{file_ext}"
+            unique_target_path = target_path.parent / unique_filename
+            
+            if not unique_target_path.exists():
+                return unique_target_path
+            
+            counter += 1
+
+    def preview_target_path(self, filepath: str) -> Optional[str]:
+        """
+        Preview where a file would be backed up without actually backing it up
+
+        Args:
+            filepath: Path to the file to preview
+
+        Returns:
+            Target backup path as string, or None if file type not supported
+        """
+        if not os.path.exists(filepath):
+            return None
+
+        target_path = self._get_target_path(filepath)
+        return str(target_path) if target_path else None
 
     def backup_file(self, filepath: str, skip_duplicates: bool = True) -> str:
         """

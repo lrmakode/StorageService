@@ -61,6 +61,50 @@ def backup(backup_root: str, source: str, skip_duplicates: bool):
     "--backup-root",
     "-b",
     required=True,
+    help="Root directory for backups",
+    type=click.Path(),
+)
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
+def preview(backup_root: str, files):
+    """Preview where files would be backed up without actually backing them up"""
+    try:
+        service = StorageService(backup_root)
+
+        if not files:
+            click.echo("❌ Please provide at least one file path", err=True)
+            sys.exit(1)
+
+        click.echo("\n📋 Backup Location Preview")
+        click.echo("=" * 70)
+        click.echo(f"Backup Root: {backup_root}\n")
+
+        all_supported = True
+        for file_path in files:
+            target_path = service.preview_target_path(file_path)
+
+            if target_path:
+                click.echo(f"✅ {file_path}")
+                click.echo(f"   → {target_path}\n")
+            else:
+                click.echo(f"❌ {file_path}")
+                click.echo(f"   Media type not supported\n")
+                all_supported = False
+
+        if all_supported:
+            click.echo("✅ All files can be backed up successfully!")
+        else:
+            click.echo("⚠️  Some files have unsupported media types")
+
+    except Exception as e:
+        click.echo(f"❌ Error during preview: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--backup-root",
+    "-b",
+    required=True,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
