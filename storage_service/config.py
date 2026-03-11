@@ -14,7 +14,7 @@ class Config:
     MEDIA_TYPES = {
         "photos": {
             "name": "photos",
-            "extensions": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg"},
+            "extensions": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".heic", ".heif"},
             "directory": "Photos",
         },
         "videos": {
