@@ -38,12 +38,13 @@ class Deduplicator:
                 hasher.update(chunk)
         return hasher.hexdigest()
 
-    def is_duplicate(self, filepath: str) -> bool:
+    def is_duplicate(self, filepath: str, file_hash: Optional[str] = None) -> bool:
         """
         Check if file is a duplicate of an already backed up file
 
         Args:
             filepath: Path to the file to check
+            file_hash: Pre-calculated file hash (optional, will calculate if not provided)
 
         Returns:
             True if file is a duplicate, False otherwise
@@ -51,7 +52,8 @@ class Deduplicator:
         if not os.path.exists(filepath):
             return False
 
-        file_hash = self.calculate_file_hash(filepath)
+        if file_hash is None:
+            file_hash = self.calculate_file_hash(filepath)
         return self.db.hash_exists(file_hash)
 
     def get_duplicate_files(self, filepath: str) -> List[str]:
@@ -70,17 +72,19 @@ class Deduplicator:
         file_hash = self.calculate_file_hash(filepath)
         return self.db.get_files_by_hash(file_hash)
 
-    def register_file(self, filepath: str) -> str:
+    def register_file(self, filepath: str, file_hash: Optional[str] = None) -> str:
         """
         Register a file in the deduplication index
 
         Args:
             filepath: Path to the file
+            file_hash: Pre-calculated file hash (optional, will calculate if not provided)
 
         Returns:
             The file hash
         """
-        file_hash = self.calculate_file_hash(filepath)
+        if file_hash is None:
+            file_hash = self.calculate_file_hash(filepath)
         hash_id = self.db.add_hash(file_hash)
         self.db.add_file_to_hash(hash_id, filepath)
         return file_hash

@@ -6,6 +6,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from click import echo
+
 from .src.MediaCreationDateExtractor import MediaCreationDateExtractor
 
 try:
@@ -70,12 +72,13 @@ class StorageService:
         except (OSError, ValueError):
             return None
 
-    def _get_target_path(self, filepath: str) -> Optional[Path]:
+    def _get_target_path(self, filepath: str, file_hash: Optional[str] = None) -> Optional[Path]:
         """
         Determine target backup path for a file
 
         Args:
             filepath: Source file path
+            file_hash: Pre-calculated file hash (optional, will calculate if not provided)
 
         Returns:
             Target backup path or None if media type not supported
@@ -90,13 +93,18 @@ class StorageService:
         if not file_datetime:
             return None
 
+        # Use provided hash or calculate it
+        if file_hash is None:
+            file_hash = self.deduplicator.calculate_file_hash(filepath)
+        hash_bucket = file_hash[:2].lower()  # Use first 2 chars of hash as bucket
+
         # Get directory names from config
         media_dir = self.detector.get_media_directory_name(media_type)
         year = file_datetime.strftime("%Y")
-        month = file_datetime.strftime("%m_%B")  # e.g., "01_January"
+        month = file_datetime.strftime("%m")  # e.g., "09"
 
-        # Build target path
-        target_dir = self.backup_root / media_dir / year / month
+        # Build target path: media_dir/YYYY/MM/hash_bucket/filename
+        target_dir = self.backup_root / media_dir / year / month / hash_bucket
         target_dir.mkdir(parents=True, exist_ok=True)
 
         filename = Path(filepath).name
@@ -147,7 +155,10 @@ class StorageService:
         if not os.path.exists(filepath):
             return None
 
-        target_path = self._get_target_path(filepath)
+        # Use provided hash or calculate it
+        file_hash = self.deduplicator.calculate_file_hash(filepath)
+        print(f"Previewing target path for: {filepath} (hash: {file_hash})")
+        target_path = self._get_target_path(filepath, file_hash)
         return str(target_path) if target_path else None
 
     def backup_file(self, filepath: str, skip_duplicates: bool = True) -> str:
@@ -164,25 +175,28 @@ class StorageService:
         if not os.path.exists(filepath):
             return "failed"
 
-        target_path = self._get_target_path(filepath)
+        # Calculate file hash once and reuse throughout
+        file_hash = self.deduplicator.calculate_file_hash(filepath)
+        
+        target_path = self._get_target_path(filepath, file_hash)
         if not target_path:
             return "failed"
 
         # Check for duplicates
-        if skip_duplicates and self.deduplicator.is_duplicate(filepath):
+        if skip_duplicates and self.deduplicator.is_duplicate(filepath, file_hash):
             # File already exists, just register it
-            self.deduplicator.register_file(filepath)
-            self._register_backup(filepath, str(target_path), "skipped_duplicate")
+            self.deduplicator.register_file(filepath, file_hash)
+            self._register_backup(filepath, str(target_path), "skipped_duplicate", file_hash)
             return "skipped_duplicate"
 
         # Copy file
         try:
             shutil.copy2(filepath, target_path)
-            self.deduplicator.register_file(filepath)
-            self._register_backup(filepath, str(target_path), "success")
+            self.deduplicator.register_file(filepath, file_hash)
+            self._register_backup(filepath, str(target_path), "success", file_hash)
             return "success"
         except Exception as e:
-            self._register_backup(filepath, str(target_path), f"error: {str(e)}")
+            self._register_backup(filepath, str(target_path), f"error: {str(e)}", file_hash)
             return "failed"
 
     def backup_directory(
@@ -224,17 +238,14 @@ class StorageService:
 
         return stats
 
-    def _register_backup(self, source: str, target: str, status: str) -> None:
+    def _register_backup(self, source: str, target: str, status: str, file_hash: Optional[str] = None) -> None:
         """Register a backup in the registry"""
         # Get file info
         file_size = None
-        file_hash = None
         media_type = self.detector.detect_media_type(source)
         
         if os.path.exists(source):
             file_size = os.path.getsize(source)
-            if status != "skipped_duplicate":
-                file_hash = self.deduplicator.calculate_file_hash(source)
         
         # Store in database
         self.db.add_backup_entry(
