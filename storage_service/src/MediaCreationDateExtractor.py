@@ -6,12 +6,20 @@ from pathlib import Path
 from typing import Optional
 from storage_service.config import MediaType
 from storage_service.media_detector import MediaDetector
+
 try:
     from PIL import Image
     from PIL.ExifTags import TAGS
 except ImportError:
     Image = None
     TAGS = None
+
+# Register HEIF/HEIC support
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass  # pillow_heif not installed, HEIC support will be limited
 
 # Media file extensions
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".heic"}
