@@ -217,6 +217,13 @@ class StorageService:
         if not source_path.exists() or not source_path.is_dir():
             return {"error": "Invalid source directory"}
 
+        # Count files in backup storage before backup
+        backup_files_before = sum(
+            1
+            for _ in self.backup_root.rglob("*")
+            if _.is_file() and not str(_).startswith(str(self.backup_root / ".storage_service"))
+        )
+
         # Collect all files
         files = [
             f
@@ -224,7 +231,13 @@ class StorageService:
             if f.is_file() and self.detector.is_supported_media(str(f))
         ]
 
-        stats = {"total": len(files), "successful": 0, "skipped": 0, "failed": 0}
+        stats = {
+            "total_source_files": len(files),
+            "successful": 0,
+            "skipped": 0,
+            "failed": 0,
+            "backup_files_before": backup_files_before,
+        }
 
         iterator = tqdm(files, disable=not show_progress) if show_progress else files
         for file_path in iterator:
@@ -235,6 +248,14 @@ class StorageService:
                 stats["skipped"] += 1
             else:  # "failed"
                 stats["failed"] += 1
+
+        # Count files in backup storage after backup
+        backup_files_after = sum(
+            1
+            for _ in self.backup_root.rglob("*")
+            if _.is_file() and not str(_).startswith(str(self.backup_root / ".storage_service"))
+        )
+        stats["backup_files_after"] = backup_files_after
 
         return stats
 
