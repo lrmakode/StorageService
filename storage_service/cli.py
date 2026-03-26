@@ -1,10 +1,32 @@
 """Command Line Interface for Storage Service"""
 
+import json
 import click
 import sys
 from pathlib import Path
 from typing import Optional
 from . import StorageService, Config
+
+# Well-known config file location
+_DEFAULT_CONFIG_FILE = Path.home() / ".config" / "storage-service" / "config.json"
+
+
+def _resolve_backup_root(backup_root: Optional[str]) -> str:
+    """Return backup_root from the argument, or read it from the config file."""
+    if backup_root:
+        return backup_root
+    if _DEFAULT_CONFIG_FILE.exists():
+        try:
+            data = json.loads(_DEFAULT_CONFIG_FILE.read_text())
+            value = data.get("backup_root")
+            if value:
+                return str(value)
+        except (json.JSONDecodeError, OSError):
+            pass
+    raise click.UsageError(
+        "No backup root provided. Pass -b / --backup-root or set \'backup_root\' in "
+        f"{_DEFAULT_CONFIG_FILE}"
+    )
 
 
 def _format_size(size_bytes: int) -> str:
@@ -27,7 +49,8 @@ def cli():
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory for backups",
     type=click.Path(),
 )
@@ -43,9 +66,10 @@ def cli():
     default=True,
     help="Skip duplicate files (default: True)",
 )
-def backup(backup_root: str, source: str, skip_duplicates: bool):
+def backup(backup_root: Optional[str], source: str, skip_duplicates: bool):
     """Backup media files from source directory"""
     try:
+        backup_root = _resolve_backup_root(backup_root)
         click.echo(f"📁 Starting backup from: {source}")
         click.echo(f"💾 Backup destination: {backup_root}\n")
 
@@ -78,14 +102,16 @@ def backup(backup_root: str, source: str, skip_duplicates: bool):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory for backups",
     type=click.Path(),
 )
 @click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
-def preview(backup_root: str, files):
+def preview(backup_root: Optional[str], files):
     """Preview where files would be backed up without actually backing them up"""
     try:
+        backup_root = _resolve_backup_root(backup_root)
         service = StorageService(backup_root)
 
         if not files:
@@ -122,13 +148,15 @@ def preview(backup_root: str, files):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
-def show_structure(backup_root: str):
+def show_structure(backup_root: Optional[str]):
     """Display the backup directory structure"""
     try:
+        backup_root = _resolve_backup_root(backup_root)
         service = StorageService(backup_root)
         service.print_structure()
     except Exception as e:
@@ -140,13 +168,15 @@ def show_structure(backup_root: str):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
-def stats(backup_root: str):
+def stats(backup_root: Optional[str]):
     """Show backup statistics"""
     try:
+        backup_root = _resolve_backup_root(backup_root)
         service = StorageService(backup_root)
         stats_data = service.get_statistics()
 
@@ -185,11 +215,12 @@ def stats(backup_root: str):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
-def show_config(backup_root: str):
+def show_config(backup_root: Optional[str]):
     """Display suggested directory structure"""
     config = Config()
     click.echo(config.get_suggested_structure())
@@ -259,15 +290,17 @@ def interactive(backup_root: Optional[str], source: Optional[str]):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
-def find_duplicates(backup_root: str):
+def find_duplicates(backup_root: Optional[str]):
     """Find and display duplicate files"""
     try:
         from .database import Database
 
+        backup_root = _resolve_backup_root(backup_root)
         db_path = str(Path(backup_root) / ".storage_service" / "storage.db")
         db = Database(db_path)
 
@@ -320,7 +353,8 @@ def find_duplicates(backup_root: str):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
@@ -337,11 +371,12 @@ def find_duplicates(backup_root: str):
     required=False,
     help="Filter by media type (photos, videos, audio, documents)",
 )
-def top_files(backup_root: str, limit: int, media_type: Optional[str]):
+def top_files(backup_root: Optional[str], limit: int, media_type: Optional[str]):
     """List top N backed-up files by size (largest first)"""
     try:
         from .database import Database
 
+        backup_root = _resolve_backup_root(backup_root)
         db_path = str(Path(backup_root) / ".storage_service" / "storage.db")
         db = Database(db_path)
 
@@ -368,7 +403,8 @@ def top_files(backup_root: str, limit: int, media_type: Optional[str]):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
@@ -384,11 +420,12 @@ def top_files(backup_root: str, limit: int, media_type: Optional[str]):
     required=False,
     help="Search by file path (partial match)",
 )
-def search(backup_root: str, media_type: Optional[str], path: Optional[str]):
+def search(backup_root: Optional[str], media_type: Optional[str], path: Optional[str]):
     """Search backup registry with filters"""
     try:
         from .database import Database
 
+        backup_root = _resolve_backup_root(backup_root)
         db_path = str(Path(backup_root) / ".storage_service" / "storage.db")
         db = Database(db_path)
 
@@ -426,7 +463,8 @@ def search(backup_root: str, media_type: Optional[str], path: Optional[str]):
 @click.option(
     "--backup-root",
     "-b",
-    required=True,
+    required=False,
+    default=None,
     help="Root directory of backups",
     type=click.Path(exists=True),
 )
@@ -452,7 +490,7 @@ def search(backup_root: str, media_type: Optional[str], path: Optional[str]):
     help="Show what would be deleted without actually deleting anything",
 )
 @click.argument("files", nargs=-1, type=click.Path())
-def delete(backup_root: str, source: Optional[str], yes: bool, dry_run: bool, files):
+def delete(backup_root: Optional[str], source: Optional[str], yes: bool, dry_run: bool, files):
     """Delete backed-up files from the backup storage.
 
     Accepts one or more backup TARGET paths as arguments, or use --source to
@@ -473,6 +511,7 @@ def delete(backup_root: str, source: Optional[str], yes: bool, dry_run: bool, fi
             click.echo("❌ Provide at least one file path or use --source.", err=True)
             sys.exit(1)
 
+        backup_root = _resolve_backup_root(backup_root)
         service = StorageService(backup_root)
 
         # Collect what will be deleted so we can confirm
