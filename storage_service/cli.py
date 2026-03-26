@@ -55,10 +55,19 @@ def backup(backup_root: str, source: str, skip_duplicates: bool):
         )
 
         click.echo(f"\n✅ Backup Complete!")
-        click.echo(f"   Total files processed: {stats.get('total', 0)}")
-        click.echo(f"   Successful: {stats.get('successful', 0)}")
-        click.echo(f"   Skipped (duplicates): {stats.get('skipped', 0)}")
-        click.echo(f"   Failed: {stats.get('failed', 0)}")
+        click.echo("=" * 50)
+        click.echo(f"   Total source files : {stats.get('total_source_files', 0)}")
+        click.echo(f"   ✅ Successful       : {stats.get('successful', 0)}")
+        click.echo(f"   ⏭️  Skipped (dupes)  : {stats.get('skipped', 0)}")
+        click.echo(f"   ❌ Failed           : {stats.get('failed', 0)}")
+        click.echo(f"   💾 Total copied     : {_format_size(stats.get('total_size', 0))}")
+
+        by_type = stats.get("by_media_type", {})
+        if by_type:
+            click.echo("\n🗂️  By Media Type:")
+            for media_type, info in sorted(by_type.items(), key=lambda x: x[1]["count"], reverse=True):
+                label = media_type.capitalize()
+                click.echo(f"   {label:<12} {info['count']:>6} files   {_format_size(info['size'])}")
 
     except Exception as e:
         click.echo(f"❌ Error during backup: {str(e)}", err=True)

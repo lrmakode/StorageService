@@ -70,7 +70,16 @@ class MediaCreationDateExtractor:
             date_value = date_original or digitized_date or create_date
 
             if date_value:
-                return datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S")
+                try:
+                    return datetime.strptime(date_value, "%Y:%m:%d %H:%M:%S")
+                except ValueError:
+                    # Some cameras write invalid times (e.g. hour=24). Try to
+                    # sanitize by clamping the time part to 23:59:59.
+                    try:
+                        date_part = date_value.split(" ")[0]
+                        return datetime.strptime(date_part + " 23:59:59", "%Y:%m:%d %H:%M:%S")
+                    except ValueError:
+                        pass
 
         except Exception as e:
             print(f"Image EXIF error: {e}")

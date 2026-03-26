@@ -231,11 +231,13 @@ class StorageService:
             if f.is_file() and self.detector.is_supported_media(str(f))
         ]
 
-        stats = {
+        stats: Dict = {
             "total_source_files": len(files),
             "successful": 0,
             "skipped": 0,
             "failed": 0,
+            "total_size": 0,
+            "by_media_type": {},
             "backup_files_before": backup_files_before,
         }
 
@@ -244,6 +246,12 @@ class StorageService:
             status = self.backup_file(str(file_path), skip_duplicates)
             if status == "success":
                 stats["successful"] += 1
+                media_type = self.detector.detect_media_type(str(file_path)) or "unknown"
+                file_size = file_path.stat().st_size
+                stats["total_size"] += file_size
+                entry = stats["by_media_type"].setdefault(media_type, {"count": 0, "size": 0})
+                entry["count"] += 1
+                entry["size"] += file_size
             elif status == "skipped_duplicate":
                 stats["skipped"] += 1
             else:  # "failed"
