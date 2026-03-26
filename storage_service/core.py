@@ -330,6 +330,11 @@ class StorageService:
             "total_backed_up_files": total_files,
             "deduplication": dedup_stats,
             "registry_entries": registry_stats["total"],
+            "successful": registry_stats["successful"],
+            "skipped": registry_stats["skipped"],
+            "failed": registry_stats["failed"],
+            "total_size": registry_stats["total_size"],
+            "by_media_type": registry_stats["by_media_type"],
             "registry_stats": registry_stats,
         }
 

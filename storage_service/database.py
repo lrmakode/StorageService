@@ -244,11 +244,18 @@ class Database:
         failed = cursor.fetchone()[0]
 
         cursor.execute(
-            """SELECT media_type, COUNT(*) as count FROM backup_registry 
+            """SELECT media_type, COUNT(*) as count, COALESCE(SUM(file_size), 0) as size
+               FROM backup_registry
                WHERE status = ? GROUP BY media_type""",
             ("success",),
         )
-        by_type = {row[0]: row[1] for row in cursor.fetchall()}
+        by_type = {row[0]: {"count": row[1], "size": row[2]} for row in cursor.fetchall()}
+
+        cursor.execute(
+            "SELECT COALESCE(SUM(file_size), 0) FROM backup_registry WHERE status = ?",
+            ("success",),
+        )
+        total_size = cursor.fetchone()[0]
 
         conn.close()
 
@@ -257,6 +264,7 @@ class Database:
             "successful": successful,
             "skipped": skipped,
             "failed": failed,
+            "total_size": total_size,
             "by_media_type": by_type,
         }
 

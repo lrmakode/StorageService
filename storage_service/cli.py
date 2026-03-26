@@ -7,6 +7,15 @@ from typing import Optional
 from . import StorageService, Config
 
 
+def _format_size(size_bytes: int) -> str:
+    """Format a byte count into a human-readable string."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}" if unit != "B" else f"{size_bytes} B"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} PB"
+
+
 @click.group()
 @click.version_option(version="0.1.0")
 def cli():
@@ -134,16 +143,29 @@ def stats(backup_root: str):
 
         click.echo("\n📊 Backup Statistics")
         click.echo("=" * 50)
-        click.echo(f"Backup Root: {stats_data['backup_root']}")
-        click.echo(f"Total Files Backed Up: {stats_data['total_backed_up_files']}")
-        click.echo(f"Registry Entries: {stats_data['registry_entries']}")
+        click.echo(f"  Backup Root   : {stats_data['backup_root']}")
+        click.echo(f"  Total on Disk : {stats_data['total_backed_up_files']} files")
+        click.echo(f"  Total Size    : {_format_size(stats_data['total_size'])}")
+
+        click.echo(f"\n📁 Registry ({stats_data['registry_entries']} entries):")
+        click.echo(f"   ✅ Successful : {stats_data['successful']}")
+        click.echo(f"   ⏭️  Skipped    : {stats_data['skipped']}")
+        click.echo(f"   ❌ Failed     : {stats_data['failed']}")
+
+        by_type = stats_data["by_media_type"]
+        if by_type:
+            click.echo("\n🗂️  By Media Type:")
+            # Sort by count descending
+            for media_type, info in sorted(by_type.items(), key=lambda x: x[1]["count"], reverse=True):
+                label = (media_type or "unknown").capitalize()
+                click.echo(f"   {label:<12} {info['count']:>6} files   {_format_size(info['size'])}")
 
         dedup = stats_data["deduplication"]
-        click.echo(f"\n🔄 Deduplication Stats:")
-        click.echo(f"   Total Unique Hashes: {dedup['total_unique_hashes']}")
-        click.echo(f"   Total Files Tracked: {dedup['total_files_tracked']}")
-        click.echo(f"   Duplicate Groups: {dedup['duplicate_groups']}")
-        click.echo(f"   Total Duplicate Files: {dedup['total_duplicate_files']}")
+        click.echo(f"\n🔄 Deduplication:")
+        click.echo(f"   Unique Hashes     : {dedup['total_unique_hashes']}")
+        click.echo(f"   Files Tracked     : {dedup['total_files_tracked']}")
+        click.echo(f"   Duplicate Groups  : {dedup['duplicate_groups']}")
+        click.echo(f"   Duplicate Files   : {dedup['total_duplicate_files']}")
 
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
