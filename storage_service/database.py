@@ -223,6 +223,28 @@ class Database:
         conn.close()
         return [dict(row) for row in results]
 
+    def get_top_files_by_size(self, limit: int = 100, media_type: Optional[str] = None) -> List[Dict]:
+        """Return the top N backed-up files ordered by file_size descending."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        query = """SELECT source_path, target_path, media_type, file_size, backed_up_at
+                   FROM backup_registry
+                   WHERE status = 'success' AND file_size IS NOT NULL"""
+        params: List = []
+
+        if media_type:
+            query += " AND media_type = ?"
+            params.append(media_type)
+
+        query += " ORDER BY file_size DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in results]
+
     def get_registry_stats(self) -> Dict[str, Any]:
         """Get statistics from backup registry"""
         conn = self.get_connection()

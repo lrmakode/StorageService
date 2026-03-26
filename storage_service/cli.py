@@ -325,6 +325,54 @@ def find_duplicates(backup_root: str):
     type=click.Path(exists=True),
 )
 @click.option(
+    "--limit",
+    "-n",
+    default=100,
+    show_default=True,
+    help="Number of files to list",
+)
+@click.option(
+    "--media-type",
+    "-t",
+    required=False,
+    help="Filter by media type (photos, videos, audio, documents)",
+)
+def top_files(backup_root: str, limit: int, media_type: Optional[str]):
+    """List top N backed-up files by size (largest first)"""
+    try:
+        from .database import Database
+
+        db_path = str(Path(backup_root) / ".storage_service" / "storage.db")
+        db = Database(db_path)
+
+        results = db.get_top_files_by_size(limit=limit, media_type=media_type)
+
+        if not results:
+            click.echo("❌ No files found!")
+            return
+
+        type_label = f" [{media_type}]" if media_type else ""
+        click.echo(f"\n📦 Top {len(results)} files by size{type_label}:\n")
+        for i, row in enumerate(results, 1):
+            size_str = _format_size(row["file_size"])
+            click.echo(f"{i:>4}. {size_str:<12} {row['source_path']}")
+            click.echo(f"        └─ {row['target_path']}  ({row['media_type']})")
+        click.echo()
+
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--backup-root",
+    "-b",
+    required=True,
+    help="Root directory of backups",
+    type=click.Path(exists=True),
+)
+@click.option(
     "--media-type",
     "-t",
     required=False,
