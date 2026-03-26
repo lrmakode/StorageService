@@ -362,3 +362,99 @@ class StorageService:
 
         if file_count > 0:
             print(f"{prefix}├── ({file_count} files)")
+
+    def delete_file(self, target_path: str) -> str:
+        """
+        Delete a backed-up file by its backup (target) path.
+
+        Removes the physical file and all matching entries from the registry.
+        If no other source files reference the same hash, the hash record is
+        also cleaned up.
+
+        Args:
+            target_path: Absolute path to the backed-up file to delete.
+
+        Returns:
+            Status: "success", "not_found", or "failed"
+        """
+        target = Path(target_path)
+
+        # Verify the file is inside backup_root for safety
+        try:
+            target.resolve().relative_to(self.backup_root.resolve())
+        except ValueError:
+            return "failed"
+
+        if not target.exists():
+            # Still remove stale DB entries if any
+            self.db.delete_backup_entry_by_target(target_path)
+            return "not_found"
+
+        try:
+            target.unlink()
+        except OSError:
+            return "failed"
+
+        # Remove registry entries
+        self.db.delete_backup_entry_by_target(target_path)
+
+        # Clean up the hash index
+        self.db.cleanup_orphan_hashes()
+
+        # Remove empty parent directories up to backup_root
+        try:
+            parent = target.parent
+            while parent != self.backup_root and parent != parent.parent:
+                if not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+                else:
+                    break
+        except OSError:
+            pass
+
+        return "success"
+
+    def delete_by_source(self, source_path: str) -> Dict:
+        """
+        Delete all backed-up files that were sourced from the given path.
+
+        Args:
+            source_path: Original source file path used during backup.
+
+        Returns:
+            Dictionary with counts: {"deleted": int, "not_found": int, "failed": int}
+        """
+        entries = self.db.search_backups(source_path=source_path)
+
+        # Filter to exact source path matches
+        entries = [e for e in entries if e["source_path"] == source_path]
+
+        stats: Dict[str, int] = {"deleted": 0, "not_found": 0, "failed": 0}
+
+        if not entries:
+            return stats
+
+        seen_targets = set()
+        for entry in entries:
+            target = entry["target_path"]
+            if target in seen_targets:
+                continue
+            seen_targets.add(target)
+
+            status = self.delete_file(target)
+            if status == "success":
+                stats["deleted"] += 1
+            elif status == "not_found":
+                # Remove stale DB record and still count as handled
+                self.db.delete_backup_entry_by_source(source_path)
+                stats["not_found"] += 1
+            else:
+                stats["failed"] += 1
+
+        # Remove any remaining source-path entries from the registry
+        self.db.delete_backup_entry_by_source(source_path)
+        self.db.remove_file_from_hash(source_path)
+        self.db.cleanup_orphan_hashes()
+
+        return stats

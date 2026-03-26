@@ -397,3 +397,61 @@ class Database:
             "total_duplicate_files": total_duplicate_files,
             "duplicate_groups": duplicate_groups,
         }
+
+    # Delete Operations
+    def get_backup_by_target(self, target_path: str) -> Optional[Dict]:
+        """Get a single backup registry entry by target path"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM backup_registry WHERE target_path = ? LIMIT 1",
+            (target_path,),
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return dict(result) if result else None
+
+    def delete_backup_entry_by_target(self, target_path: str) -> int:
+        """Delete backup registry entries matching target_path. Returns rows deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM backup_registry WHERE target_path = ?", (target_path,)
+        )
+        rows_deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return rows_deleted
+
+    def delete_backup_entry_by_source(self, source_path: str) -> int:
+        """Delete backup registry entries matching source_path. Returns rows deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM backup_registry WHERE source_path = ?", (source_path,)
+        )
+        rows_deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return rows_deleted
+
+    def remove_file_from_hash(self, file_path: str) -> None:
+        """Remove a file path from the hash_files table."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM hash_files WHERE file_path = ?", (file_path,))
+        conn.commit()
+        conn.close()
+
+    def cleanup_orphan_hashes(self) -> int:
+        """Remove hashes that have no associated files. Returns rows deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """DELETE FROM file_hashes
+               WHERE id NOT IN (SELECT DISTINCT hash_id FROM hash_files)"""
+        )
+        rows_deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return rows_deleted

@@ -343,6 +343,121 @@ def search(backup_root: str, media_type: Optional[str], path: Optional[str]):
         sys.exit(1)
 
 
+@cli.command()
+@click.option(
+    "--backup-root",
+    "-b",
+    required=True,
+    help="Root directory of backups",
+    type=click.Path(exists=True),
+)
+@click.option(
+    "--source",
+    "-s",
+    required=False,
+    default=None,
+    help="Delete all backup copies sourced from this original file path",
+    type=click.Path(),
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    default=False,
+    help="Skip confirmation prompt",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would be deleted without actually deleting anything",
+)
+@click.argument("files", nargs=-1, type=click.Path())
+def delete(backup_root: str, source: Optional[str], yes: bool, dry_run: bool, files):
+    """Delete backed-up files from the backup storage.
+
+    Accepts one or more backup TARGET paths as arguments, or use --source to
+    delete by the original source file path.
+
+    Examples:
+
+    \b
+      # Delete specific backup files by their backup path
+      storage-service delete -b /backup /backup/Photos/2023/01/ab/photo.jpg
+
+    \b
+      # Delete all backups that were sourced from a given file
+      storage-service delete -b /backup --source /original/photo.jpg
+    """
+    try:
+        if not source and not files:
+            click.echo("❌ Provide at least one file path or use --source.", err=True)
+            sys.exit(1)
+
+        service = StorageService(backup_root)
+
+        # Collect what will be deleted so we can confirm
+        if source:
+            from .database import Database
+            from pathlib import Path as _Path
+            db_path = str(_Path(backup_root) / ".storage_service" / "storage.db")
+            db = Database(db_path)
+            entries = db.search_backups(source_path=source)
+            entries = [e for e in entries if e["source_path"] == source]
+
+            if not entries:
+                click.echo(f"⚠️  No backups found for source: {source}")
+                return
+
+            click.echo(f"\n🗑️  Backups to delete for source: {source}")
+            for e in entries:
+                marker = "[DRY RUN] " if dry_run else ""
+                click.echo(f"   {marker}{e['target_path']}")
+        else:
+            click.echo(f"\n🗑️  Files to delete:")
+            for f in files:
+                marker = "[DRY RUN] " if dry_run else ""
+                click.echo(f"   {marker}{f}")
+
+        if dry_run:
+            click.echo("\n✅ Dry run complete. No files were deleted.")
+            return
+
+        if not yes:
+            if not click.confirm("\nProceed with deletion?"):
+                click.echo("❌ Deletion cancelled.")
+                return
+
+        click.echo()
+
+        if source:
+            stats = service.delete_by_source(source)
+            click.echo(f"✅ Deleted: {stats['deleted']}")
+            if stats["not_found"]:
+                click.echo(f"⚠️  Not found (stale records cleaned): {stats['not_found']}")
+            if stats["failed"]:
+                click.echo(f"❌ Failed: {stats['failed']}", err=True)
+        else:
+            deleted = not_found = failed = 0
+            for f in files:
+                status = service.delete_file(f)
+                if status == "success":
+                    click.echo(f"✅ Deleted: {f}")
+                    deleted += 1
+                elif status == "not_found":
+                    click.echo(f"⚠️  Not found: {f}")
+                    not_found += 1
+                else:
+                    click.echo(f"❌ Failed: {f}", err=True)
+                    failed += 1
+
+            click.echo(f"\nSummary — Deleted: {deleted}  Not found: {not_found}  Failed: {failed}")
+
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
 def main():
     """Main entry point"""
     cli()
